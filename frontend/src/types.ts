@@ -136,3 +136,104 @@ export interface SyncStatus {
   message?: string;
   commits_processed?: number;
 }
+
+// Cross-repository types
+
+export interface RepositoryWithMetrics {
+  id: number;
+  name: string;
+  provider: string;
+  last_sync: string | null;
+  commits: number;
+  contributors: number;
+  lines_added: number;
+  lines_deleted: number;
+  lines_changed: number;
+  first_commit: string | null;
+  last_commit: string | null;
+}
+
+export interface AllRepositoriesSummary {
+  overall: {
+    total_repositories: number;
+    total_commits: number;
+    total_contributors: number;
+    total_lines_added: number;
+    total_lines_deleted: number;
+    total_lines_changed: number;
+    first_commit: string | null;
+    last_commit: string | null;
+  };
+  repositories: RepositoryWithMetrics[];
+}
+
+export interface RepositoryComparison {
+  metric: string;
+  repositories: Array<{
+    id: number;
+    name: string;
+    value: number;
+  }>;
+}
+
+export interface CrossRepositoryContributor {
+  author_name: string;
+  author_email: string;
+  repositories_count: number;
+  total_commits: number;
+  total_lines_added: number;
+  total_lines_deleted: number;
+  total_lines_changed: number;
+  first_commit_date: string;
+  last_commit_date: string;
+  repositories: Array<{
+    repo_name: string;
+    total_commits: number;
+    total_lines_changed: number;
+  }>;
+}
+
+export interface CrossRepositoryChurn {
+  total_churn: number;
+  period_days: number;
+  repository_churn: Array<{
+    id: number;
+    name: string;
+    churn: number;
+    commits: number;
+  }>;
+  contributor_churn: Array<{
+    author_name: string;
+    author_email: string;
+    churn: number;
+    repositories: number;
+    commits: number;
+  }>;
+}
+
+export interface ContributorDetails {
+  author_name: string;
+  author_email: string;
+  repositories_count: number;
+  total_commits: number;
+  total_lines_added: number;
+  total_lines_deleted: number;
+  total_lines_changed: number;
+  first_commit_date: string;
+  last_commit_date: string;
+  repositories: Array<{
+    id: number;
+    name: string;
+    total_commits: number;
+    total_lines_added: number;
+    total_lines_deleted: number;
+    total_lines_changed: number;
+    first_commit_date: string;
+    last_commit_date: string;
+  }>;
+  recent_activity: Array<{
+    date: string;
+    commits: number;
+    lines_changed: number;
+  }>;
+}

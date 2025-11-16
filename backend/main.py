@@ -351,6 +351,50 @@ async def get_comprehensive_metrics(repo_id: int):
     return metrics
 
 
+# Cross-Repository Metrics Endpoints
+
+@app.get("/api/metrics/all/summary")
+async def get_all_repositories_summary():
+    """Get summary metrics across all repositories."""
+    return metrics_engine.get_all_repositories_summary()
+
+
+@app.get("/api/metrics/all/comparison")
+async def get_repository_comparison(metric: str = "commits"):
+    """Compare repositories by specific metric (commits, contributors, churn)."""
+    valid_metrics = ["commits", "contributors", "churn"]
+    if metric not in valid_metrics:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
+        )
+    return {"metric": metric, "repositories": metrics_engine.get_repository_comparison(metric)}
+
+
+@app.get("/api/metrics/all/contributors")
+async def get_cross_repository_contributors(limit: int = 50):
+    """Get contributors across all repositories."""
+    return {"contributors": metrics_engine.get_cross_repository_contributors(limit)}
+
+
+@app.get("/api/metrics/all/churn")
+async def get_cross_repository_churn(days: int = 30):
+    """Get code churn metrics across all repositories."""
+    return metrics_engine.get_cross_repository_churn(days)
+
+
+@app.get("/api/metrics/contributor/{email:path}")
+async def get_contributor_details(email: str):
+    """Get detailed metrics for a specific contributor across all repositories."""
+    contributor = metrics_engine.get_contributor_by_email(email)
+    if not contributor:
+        raise HTTPException(
+            status_code=404,
+            detail="Contributor not found"
+        )
+    return contributor
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

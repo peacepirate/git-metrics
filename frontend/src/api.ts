@@ -13,6 +13,11 @@ import type {
   ContributorInsights,
   ComprehensiveMetrics,
   SyncStatus,
+  AllRepositoriesSummary,
+  RepositoryComparison,
+  CrossRepositoryContributor,
+  CrossRepositoryChurn,
+  ContributorDetails,
 } from './types';
 
 const api = axios.create({
@@ -94,6 +99,30 @@ export const metricsApi = {
 
   getComprehensive: (repoId: number) =>
     api.get<ComprehensiveMetrics>(`/metrics/${repoId}/comprehensive`),
+};
+
+// Cross-repository metrics endpoints
+export const crossRepoMetricsApi = {
+  getAllSummary: () =>
+    api.get<AllRepositoriesSummary>('/metrics/all/summary'),
+
+  getComparison: (metric: 'commits' | 'contributors' | 'churn' = 'commits') =>
+    api.get<RepositoryComparison>('/metrics/all/comparison', {
+      params: { metric },
+    }),
+
+  getAllContributors: (limit: number = 50) =>
+    api.get<{ contributors: CrossRepositoryContributor[] }>('/metrics/all/contributors', {
+      params: { limit },
+    }),
+
+  getAllChurn: (days: number = 30) =>
+    api.get<CrossRepositoryChurn>('/metrics/all/churn', {
+      params: { days },
+    }),
+
+  getContributorDetails: (email: string) =>
+    api.get<ContributorDetails>(`/metrics/contributor/${encodeURIComponent(email)}`),
 };
 
 export default api;

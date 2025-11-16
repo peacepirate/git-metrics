@@ -353,3 +353,274 @@ class MetricsEngine:
             'quality_indicators': self.calculate_code_quality_indicators(repo_id),
             'contributors': self.calculate_contributor_insights(repo_id)
         }
+
+    # Cross-repository metrics
+
+    def get_all_repositories_summary(self) -> Dict[str, Any]:
+        """Get summary metrics across all repositories."""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Overall statistics
+            cursor.execute("""
+                SELECT
+                    COUNT(DISTINCT r.id) as total_repositories,
+                    COUNT(DISTINCT c.id) as total_commits,
+                    COUNT(DISTINCT c.author_email) as total_contributors,
+                    SUM(c.lines_added) as total_lines_added,
+                    SUM(c.lines_deleted) as total_lines_deleted,
+                    SUM(c.lines_changed) as total_lines_changed,
+                    MIN(c.commit_date) as first_commit,
+                    MAX(c.commit_date) as last_commit
+                FROM repositories r
+                LEFT JOIN commits c ON r.id = c.repo_id
+                WHERE r.is_active = 1
+            """)
+
+            overall = dict(cursor.fetchone())
+
+            # Per-repository breakdown
+            cursor.execute("""
+                SELECT
+                    r.id,
+                    r.name,
+                    r.provider,
+                    r.last_sync,
+                    COUNT(c.id) as commits,
+                    COUNT(DISTINCT c.author_email) as contributors,
+                    SUM(c.lines_added) as lines_added,
+                    SUM(c.lines_deleted) as lines_deleted,
+                    SUM(c.lines_changed) as lines_changed,
+                    MIN(c.commit_date) as first_commit,
+                    MAX(c.commit_date) as last_commit
+                FROM repositories r
+                LEFT JOIN commits c ON r.id = c.repo_id
+                WHERE r.is_active = 1
+                GROUP BY r.id
+                ORDER BY commits DESC
+            """)
+
+            repositories = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'overall': overall,
+                'repositories': repositories
+            }
+
+    def get_repository_comparison(self, metric_type: str = 'commits') -> List[Dict[str, Any]]:
+        """Compare repositories by specific metric."""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            if metric_type == 'commits':
+                cursor.execute("""
+                    SELECT
+                        r.id,
+                        r.name,
+                        COUNT(c.id) as value
+                    FROM repositories r
+                    LEFT JOIN commits c ON r.id = c.repo_id
+                    WHERE r.is_active = 1
+                    GROUP BY r.id
+                    ORDER BY value DESC
+                """)
+            elif metric_type == 'contributors':
+                cursor.execute("""
+                    SELECT
+                        r.id,
+                        r.name,
+                        COUNT(DISTINCT c.author_email) as value
+                    FROM repositories r
+                    LEFT JOIN commits c ON r.id = c.repo_id
+                    WHERE r.is_active = 1
+                    GROUP BY r.id
+                    ORDER BY value DESC
+                """)
+            elif metric_type == 'churn':
+                cursor.execute("""
+                    SELECT
+                        r.id,
+                        r.name,
+                        SUM(c.lines_changed) as value
+                    FROM repositories r
+                    LEFT JOIN commits c ON r.id = c.repo_id
+                    WHERE r.is_active = 1
+                    GROUP BY r.id
+                    ORDER BY value DESC
+                """)
+            else:
+                return []
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_cross_repository_contributors(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get contributors across all repositories."""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Aggregate contributors across all repos
+            cursor.execute("""
+                SELECT
+                    c.author_name,
+                    c.author_email,
+                    COUNT(DISTINCT c.repo_id) as repositories_count,
+                    SUM(c.total_commits) as total_commits,
+                    SUM(c.total_lines_added) as total_lines_added,
+                    SUM(c.total_lines_deleted) as total_lines_deleted,
+                    SUM(c.total_lines_changed) as total_lines_changed,
+                    MIN(c.first_commit_date) as first_commit_date,
+                    MAX(c.last_commit_date) as last_commit_date
+                FROM contributors c
+                JOIN repositories r ON c.repo_id = r.id
+                WHERE r.is_active = 1
+                GROUP BY c.author_email
+                ORDER BY total_commits DESC
+                LIMIT ?
+            """, (limit,))
+
+            contributors = [dict(row) for row in cursor.fetchall()]
+
+            # Get repository breakdown for each contributor
+            for contributor in contributors:
+                cursor.execute("""
+                    SELECT
+                        r.name as repo_name,
+                        c.total_commits,
+                        c.total_lines_changed
+                    FROM contributors c
+                    JOIN repositories r ON c.repo_id = r.id
+                    WHERE c.author_email = ?
+                    AND r.is_active = 1
+                    ORDER BY c.total_commits DESC
+                """, (contributor['author_email'],))
+
+                contributor['repositories'] = [dict(row) for row in cursor.fetchall()]
+
+            return contributors
+
+    def get_cross_repository_churn(self, days: int = 30) -> Dict[str, Any]:
+        """Get code churn metrics across all repositories."""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Total churn across all repos
+            cursor.execute("""
+                SELECT
+                    SUM(lines_added + lines_deleted) as total_churn
+                FROM commits c
+                JOIN repositories r ON c.repo_id = r.id
+                WHERE r.is_active = 1
+                AND c.commit_date >= datetime('now', '-' || ? || ' days')
+            """, (days,))
+
+            total_churn = cursor.fetchone()[0] or 0
+
+            # Churn by repository
+            cursor.execute("""
+                SELECT
+                    r.id,
+                    r.name,
+                    SUM(c.lines_added + c.lines_deleted) as churn,
+                    COUNT(c.id) as commits
+                FROM repositories r
+                LEFT JOIN commits c ON r.id = c.repo_id
+                WHERE r.is_active = 1
+                AND c.commit_date >= datetime('now', '-' || ? || ' days')
+                GROUP BY r.id
+                ORDER BY churn DESC
+            """, (days,))
+
+            repo_churn = [dict(row) for row in cursor.fetchall()]
+
+            # Churn by contributor across all repos
+            cursor.execute("""
+                SELECT
+                    c.author_name,
+                    c.author_email,
+                    SUM(c.lines_added + c.lines_deleted) as churn,
+                    COUNT(DISTINCT c.repo_id) as repositories,
+                    COUNT(c.id) as commits
+                FROM commits c
+                JOIN repositories r ON c.repo_id = r.id
+                WHERE r.is_active = 1
+                AND c.commit_date >= datetime('now', '-' || ? || ' days')
+                GROUP BY c.author_email
+                ORDER BY churn DESC
+                LIMIT 30
+            """, (days,))
+
+            contributor_churn = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'total_churn': total_churn,
+                'period_days': days,
+                'repository_churn': repo_churn,
+                'contributor_churn': contributor_churn
+            }
+
+    def get_contributor_by_email(self, email: str) -> Dict[str, Any]:
+        """Get detailed metrics for a specific contributor across all repositories."""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Overall stats
+            cursor.execute("""
+                SELECT
+                    c.author_name,
+                    c.author_email,
+                    COUNT(DISTINCT c.repo_id) as repositories_count,
+                    SUM(c.total_commits) as total_commits,
+                    SUM(c.total_lines_added) as total_lines_added,
+                    SUM(c.total_lines_deleted) as total_lines_deleted,
+                    SUM(c.total_lines_changed) as total_lines_changed,
+                    MIN(c.first_commit_date) as first_commit_date,
+                    MAX(c.last_commit_date) as last_commit_date
+                FROM contributors c
+                JOIN repositories r ON c.repo_id = r.id
+                WHERE c.author_email = ?
+                AND r.is_active = 1
+                GROUP BY c.author_email
+            """, (email,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            stats = dict(row)
+
+            # Repository breakdown
+            cursor.execute("""
+                SELECT
+                    r.id,
+                    r.name,
+                    c.total_commits,
+                    c.total_lines_added,
+                    c.total_lines_deleted,
+                    c.total_lines_changed,
+                    c.first_commit_date,
+                    c.last_commit_date
+                FROM contributors c
+                JOIN repositories r ON c.repo_id = r.id
+                WHERE c.author_email = ?
+                AND r.is_active = 1
+                ORDER BY c.total_commits DESC
+            """, (email,))
+
+            stats['repositories'] = [dict(row) for row in cursor.fetchall()]
+
+            # Recent activity (last 30 days)
+            cursor.execute("""
+                SELECT
+                    DATE(commit_date) as date,
+                    COUNT(*) as commits,
+                    SUM(lines_changed) as lines_changed
+                FROM commits
+                WHERE author_email = ?
+                AND commit_date >= datetime('now', '-30 days')
+                GROUP BY DATE(commit_date)
+                ORDER BY date ASC
+            """, (email,))
+
+            stats['recent_activity'] = [dict(row) for row in cursor.fetchall()]
+
+            return stats

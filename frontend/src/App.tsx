@@ -4,6 +4,8 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Contributors from './pages/Contributors';
 import CodeChurn from './pages/CodeChurn';
+import AllRepositories from './pages/AllRepositories';
+import AllContributors from './pages/AllContributors';
 import { repositoryApi } from './api';
 import type { Repository } from './types';
 
@@ -54,8 +56,30 @@ function App() {
                   >
                     Home
                   </Link>
+
+                  {/* Combined Views */}
+                  {repositories.length > 0 && (
+                    <>
+                      <div className="border-l border-gray-600 h-6 mx-2"></div>
+                      <Link
+                        to="/all-repositories"
+                        className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition"
+                      >
+                        All Repos
+                      </Link>
+                      <Link
+                        to="/all-contributors"
+                        className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition"
+                      >
+                        All Contributors
+                      </Link>
+                    </>
+                  )}
+
+                  {/* Single Repository Views */}
                   {selectedRepo && (
                     <>
+                      <div className="border-l border-gray-600 h-6 mx-2"></div>
                       <Link
                         to={`/dashboard/${selectedRepo}`}
                         className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700 transition"
@@ -98,6 +122,12 @@ function App() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
             <Route path="/" element={<Home onRepoAdded={handleRepoAdded} />} />
+
+            {/* Combined repository views */}
+            <Route path="/all-repositories" element={<AllRepositories />} />
+            <Route path="/all-contributors" element={<AllContributors />} />
+
+            {/* Single repository views */}
             <Route path="/dashboard/:repoId" element={<Dashboard />} />
             <Route path="/contributors/:repoId" element={<Contributors />} />
             <Route path="/churn/:repoId" element={<CodeChurn />} />

@@ -3,15 +3,25 @@ FastAPI backend for Git Metrics application.
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import asyncio
 from contextlib import asynccontextmanager
+import json
 
 from database import MetricsDatabase
 from git_providers import get_provider
 from metrics_engine import MetricsEngine
+
+
+# Custom JSON encoder for datetime objects
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 # Global instances
@@ -356,7 +366,13 @@ async def get_comprehensive_metrics(repo_id: int):
 @app.get("/api/metrics/all/summary")
 async def get_all_repositories_summary():
     """Get summary metrics across all repositories."""
-    return metrics_engine.get_all_repositories_summary()
+    try:
+        return metrics_engine.get_all_repositories_summary()
+    except Exception as e:
+        print(f"Error in get_all_repositories_summary: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/metrics/all/comparison")
@@ -368,19 +384,37 @@ async def get_repository_comparison(metric: str = "commits"):
             status_code=400,
             detail=f"Invalid metric. Must be one of: {', '.join(valid_metrics)}"
         )
-    return {"metric": metric, "repositories": metrics_engine.get_repository_comparison(metric)}
+    try:
+        return {"metric": metric, "repositories": metrics_engine.get_repository_comparison(metric)}
+    except Exception as e:
+        print(f"Error in get_repository_comparison: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/metrics/all/contributors")
 async def get_cross_repository_contributors(limit: int = 50):
     """Get contributors across all repositories."""
-    return {"contributors": metrics_engine.get_cross_repository_contributors(limit)}
+    try:
+        return {"contributors": metrics_engine.get_cross_repository_contributors(limit)}
+    except Exception as e:
+        print(f"Error in get_cross_repository_contributors: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/metrics/all/churn")
 async def get_cross_repository_churn(days: int = 30):
     """Get code churn metrics across all repositories."""
-    return metrics_engine.get_cross_repository_churn(days)
+    try:
+        return metrics_engine.get_cross_repository_churn(days)
+    except Exception as e:
+        print(f"Error in get_cross_repository_churn: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/metrics/contributor/{email:path}")

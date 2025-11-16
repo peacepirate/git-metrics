@@ -367,9 +367,9 @@ class MetricsEngine:
                     COUNT(DISTINCT r.id) as total_repositories,
                     COUNT(DISTINCT c.id) as total_commits,
                     COUNT(DISTINCT c.author_email) as total_contributors,
-                    SUM(c.lines_added) as total_lines_added,
-                    SUM(c.lines_deleted) as total_lines_deleted,
-                    SUM(c.lines_changed) as total_lines_changed,
+                    COALESCE(SUM(c.lines_added), 0) as total_lines_added,
+                    COALESCE(SUM(c.lines_deleted), 0) as total_lines_deleted,
+                    COALESCE(SUM(c.lines_changed), 0) as total_lines_changed,
                     MIN(c.commit_date) as first_commit,
                     MAX(c.commit_date) as last_commit
                 FROM repositories r
@@ -377,7 +377,8 @@ class MetricsEngine:
                 WHERE r.is_active = 1
             """)
 
-            overall = dict(cursor.fetchone())
+            row = cursor.fetchone()
+            overall = dict(row) if row else {}
 
             # Per-repository breakdown
             cursor.execute("""
@@ -388,9 +389,9 @@ class MetricsEngine:
                     r.last_sync,
                     COUNT(c.id) as commits,
                     COUNT(DISTINCT c.author_email) as contributors,
-                    SUM(c.lines_added) as lines_added,
-                    SUM(c.lines_deleted) as lines_deleted,
-                    SUM(c.lines_changed) as lines_changed,
+                    COALESCE(SUM(c.lines_added), 0) as lines_added,
+                    COALESCE(SUM(c.lines_deleted), 0) as lines_deleted,
+                    COALESCE(SUM(c.lines_changed), 0) as lines_changed,
                     MIN(c.commit_date) as first_commit,
                     MAX(c.commit_date) as last_commit
                 FROM repositories r
@@ -464,10 +465,10 @@ class MetricsEngine:
                     c.author_name,
                     c.author_email,
                     COUNT(DISTINCT c.repo_id) as repositories_count,
-                    SUM(c.total_commits) as total_commits,
-                    SUM(c.total_lines_added) as total_lines_added,
-                    SUM(c.total_lines_deleted) as total_lines_deleted,
-                    SUM(c.total_lines_changed) as total_lines_changed,
+                    COALESCE(SUM(c.total_commits), 0) as total_commits,
+                    COALESCE(SUM(c.total_lines_added), 0) as total_lines_added,
+                    COALESCE(SUM(c.total_lines_deleted), 0) as total_lines_deleted,
+                    COALESCE(SUM(c.total_lines_changed), 0) as total_lines_changed,
                     MIN(c.first_commit_date) as first_commit_date,
                     MAX(c.last_commit_date) as last_commit_date
                 FROM contributors c
@@ -506,27 +507,29 @@ class MetricsEngine:
             # Total churn across all repos
             cursor.execute("""
                 SELECT
-                    SUM(lines_added + lines_deleted) as total_churn
+                    COALESCE(SUM(lines_added + lines_deleted), 0) as total_churn
                 FROM commits c
                 JOIN repositories r ON c.repo_id = r.id
                 WHERE r.is_active = 1
                 AND c.commit_date >= datetime('now', '-' || ? || ' days')
             """, (days,))
 
-            total_churn = cursor.fetchone()[0] or 0
+            result = cursor.fetchone()
+            total_churn = result[0] if result else 0
 
             # Churn by repository
             cursor.execute("""
                 SELECT
                     r.id,
                     r.name,
-                    SUM(c.lines_added + c.lines_deleted) as churn,
+                    COALESCE(SUM(c.lines_added + c.lines_deleted), 0) as churn,
                     COUNT(c.id) as commits
                 FROM repositories r
                 LEFT JOIN commits c ON r.id = c.repo_id
+                    AND c.commit_date >= datetime('now', '-' || ? || ' days')
                 WHERE r.is_active = 1
-                AND c.commit_date >= datetime('now', '-' || ? || ' days')
                 GROUP BY r.id
+                HAVING COUNT(c.id) > 0
                 ORDER BY churn DESC
             """, (days,))
 
@@ -537,7 +540,7 @@ class MetricsEngine:
                 SELECT
                     c.author_name,
                     c.author_email,
-                    SUM(c.lines_added + c.lines_deleted) as churn,
+                    COALESCE(SUM(c.lines_added + c.lines_deleted), 0) as churn,
                     COUNT(DISTINCT c.repo_id) as repositories,
                     COUNT(c.id) as commits
                 FROM commits c
